@@ -26,11 +26,11 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
 app.config['MAIL_SERVER'] = 'smtp.qq.com'
 app.config['MAIL_PORT'] = 465
 app.config['MAIL_USE_SSL'] = True
-app.config['MAIL_USERNAME'] = '860365755@qq.com'
-app.config['MAIL_PASSWORD'] = 'tupbxfxnyxpebfbd'
+app.config['MAIL_USERNAME'] = 'xxx@example.com'
+app.config['MAIL_PASSWORD'] = 'xxxxxxxx'
 app.config['FLASKY_MAIL_SUBJECT_PREFIX'] = '[Flasky]'
-app.config['FLASKY_MAIL_SENDER'] = 'Flasky Admin <860365755@qq.com>'
-app.config['FLASKY_ADMIN'] = '860365755@qq.com'
+app.config['FLASKY_MAIL_SENDER'] = 'Flasky Admin <xxx@example.com>'
+app.config['FLASKY_ADMIN'] = 'xxx@example.com'
 
 manager = Manager(app)
 bootstrap = Bootstrap(app)
