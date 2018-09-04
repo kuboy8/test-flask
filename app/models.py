@@ -1,18 +1,61 @@
-from . import db
-from . import login_manager
-from . import db
+import hashlib
+from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
-from flask import current_app
-from flask_login import UserMixin
+from flask import current_app, request
+from flask_login import UserMixin, AnonymousUserMixin
+from . import db, login_manager
+
+class Permission:
+    FOLLOW = 0x01
+    COMMENT = 0x02
+    WRITE = 0x04
+    MODERATE = 0x08
+    ADMIN = 0x10
 
 class Role(db.Model):
     __tablename__ = 'roles'
     id = db.Column(db.Integer,primary_key=True)
     name = db.Column(db.String(64), unique=True)
-    users = db.relationship('User', backref='role')
+    users = db.relationship('User', backref='role', lazy='dynamic')
+    default = db.Column(db.Boolean, default=False, index=True)
+    permissions = db.Column(db.Integer)
+  
+    @staticmethod
+    def insert_roles():
+        roles = {
+            'User': [Permission.FOLLOW, Permission.COMMENT, Permission.WRITE],
+            'Moderator': [Permission.FOLLOW, Permission.COMMENT,
+                          Permission.WRITE, Permission.MODERATE],
+            'Administrator': [Permission.FOLLOW, Permission.COMMENT,
+                              Permission.WRITE, Permission.MODERATE,
+                              Permission.ADMIN]
+        }
+        default_role = 'User'
+        for r in roles:
+            role = Role.query.filter_by(name=r).first()
+            print "role:", role
+            if role is None:
+                role = Role(name=r)
+            role.reset_permissions()
+            for perm in roles[r]:
+                role.add_permission(perm)
+            print "role.permission:", role.permissions
+            role.default = (role.name == default_role)
+            db.session.add(role)
+        db.session.commit()
 
-    def __repr__(self):
+    def add_permission(self, perm):
+        if not self.has_permission(perm):
+            self.permissions += perm
+
+    def reset_permissions(self):
+            self.permissions = 0
+    
+    def has_permission(self, perm):
+        return self.permissions & perm == perm
+    
+    def  __repr__(self):
         return '<Role %r>' % self.name
 
 class User(UserMixin, db.Model):
@@ -23,6 +66,28 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(128))
     role_id = db.Column(db.Integer, db.ForeignKey('roles.id'))
     confirmed = db.Column(db.Boolean, default=False)
+    name = db.Column(db.String(64))
+    location = db.Column(db.String(64))
+    about_me = db.Column(db.Text())
+    member_since = db.Column(db.DateTime(), default=datetime.utcnow)
+    last_seen = db.Column(db.DateTime(), default=datetime.utcnow)
+    avatar_hash = db.Column(db.String(32))
+
+    def __init__(self, **kwargs):
+        super(User, self).__init__(**kwargs)
+        print "if self.role is none?", self.role
+        if self.role is None:
+            #if self.email == current_app.config['FLASKY_ADMIN']:
+            print "current_email:", self.email
+            if self.email == 'john@example.com':
+                self.role = Role.query.filter_by(name='Administrator').first()
+                #self.role = Role.query.filter_by(permissions=0x1f).first()
+                print "admin", self.role
+            if self.role is None:
+                self.role = Role.query.filter_by(default=True).first()
+                print "isnot admin", self.role
+        if self.email is not None and self.avatar_hash is None:
+            self.avatar_hash = self.gravatar_hash()
 
     @property
     def password(self):
@@ -50,8 +115,6 @@ class User(UserMixin, db.Model):
             return False
         if data.get('confirm') != self.id:
             return False
-        #print "id:",data.get('confirm')
-        #print "id2:",self.id
         self.confirmed = True
         db.session.add(self)
         return True
@@ -96,8 +159,43 @@ class User(UserMixin, db.Model):
         if self.query.filter_by(email=new_email).first() is not None:
             return False
         self.email = new_email
+        self.avatar_hash = self.gravatar_hash()
         db.session.add(self)
         return True
+
+    def can(self, permissions):
+        return self.role is not None and \
+                (self.role.permissions & permissions) == permissions
+                
+    def is_administrator(self):
+        return self.can(Permission.ADMIN)
+    
+    def return_role(self):
+        return self.role
+
+    def ping(self):
+        self.last_seen = datetime.utcnow()
+        db.session.add(self)
+   
+    def gravatar_hash(self):
+        return hashlib.md5(self.email.lower().encode('utf-8')).hexdigest()
+    
+    def gravatar(self, size=100, default='identicon', rating='g'):
+        if request.is_secure:
+            url = 'https://secure.gravatar.com/avatar'
+        else:
+            url = 'http://www.gravatar.com/avatar'
+            hash = hashlib.md5(self.email.encode('utf-8')).hexdigest()
+            return '{url}/{hash}?s={size}&d={default}&r={rating}'.format(
+                    url=url, hash=hash, size=size, default=default, rating=rating)
+
+class AnonymousUser(AnonymousUserMixin):
+    def can(self, permissions):
+        return False
+    def is_administrator(self):
+        return False
+    
+login_manager.anonymous_user = AnonymousUser
 
 @login_manager.user_loader
 def load_useraaa(user_id):

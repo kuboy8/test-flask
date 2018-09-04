@@ -3,17 +3,19 @@ from flask_login import login_user, login_required, logout_user, current_user
 from . import auth
 from .. import db
 from ..email import send_email
-from ..models import User
+from ..models import User, Role
 from .forms import LoginForm, RegistrationForm, ChangePasswordForm,\
      PasswordResetRequestForm, PasswordResetForm, ChangeEmailForm
 
 @auth.before_app_request
 def before_request():
-    if current_user.is_authenticated \
-            and not current_user.confirmed \
-            and request.blueprint != 'auth' \
-            and request.endpoint != 'static':
-        return redirect(url_for('auth.unconfirmed'))
+    if current_user.is_authenticated:
+        current_user.ping()
+        if not current_user.confirmed \
+                and request.endpoint \
+                and request.blueprint != 'auth' \
+                and request.endpoint != 'static':
+            return redirect(url_for('auth.unconfirmed'))
                 
 @auth.route('/unconfirmed')
 def unconfirmed():
@@ -26,10 +28,10 @@ def login():
     form = LoginForm()
     if form.validate_on_submit():
         user = User.query.filter_by(email=form.email.data).first()
-        print "-------------",user
         if user is not None and user.verify_password(form.password.data):
             login_user(user, form.remember_me.data)
-            print url_for('main.index')
+            print "current role:", current_user.return_role()
+            Role.insert_roles()
             return redirect(request.args.get('next') or url_for('main.index'))
         flash('Invalid username or password.')
     return render_template('auth/login.html', form=form)
