@@ -93,6 +93,9 @@ class User(UserMixin, db.Model):
             backref=db.backref('followed', lazy='joined'),
             lazy='dynamic',
             cascade='all, delete-orphan')
+    
+    comments = db.relationship('Comment', backref='author', lazy='dynamic')
+
     def __init__(self, **kwargs):
         super(User, self).__init__(**kwargs)
         print "if self.role is none?", self.role
@@ -138,7 +141,14 @@ class User(UserMixin, db.Model):
         self.confirmed = True
         db.session.add(self)
         return True
- 
+
+    def set_confirm(self, who):
+        user = User.query.filter_by(username=who).first()
+        print "set_confirm account:", user
+        user.confirmed = True
+        db.session.add(user)
+        return True
+
     def generate_reset_token(self, expiration=3600):
         s = Serializer(current_app.config['SECRET_KEY'], expiration)
         return s.dumps({'reset': self.id}).decode('utf-8')
@@ -260,6 +270,7 @@ class Post(db.Model):
     timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow)
     author_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     body_html = db.Column(db.Text)
+    comments = db.relationship('Comment', backref='post', lazy='dynamic')
 
     @staticmethod
     def generate_fake(count=100):
@@ -283,7 +294,8 @@ class Post(db.Model):
         target.body_html = bleach.linkify(bleach.clean(
             markdown(value, output_format='html'),
             tags=allowed_tags, strip=True))
-        db.event.listen(Post.body, 'set', Post.on_changed_body)
+
+db.event.listen(Post.body, 'set', Post.on_changed_body)
 
 class AnonymousUser(AnonymousUserMixin):
     def can(self, permissions):
@@ -296,4 +308,25 @@ login_manager.anonymous_user = AnonymousUser
 @login_manager.user_loader
 def load_useraaa(user_id):
     return User.query.get(int(user_id))
+
+class Comment(db.Model):
+    __tablename__ = 'comments'
+    id = db.Column(db.Integer, primary_key=True)
+    body = db.Column(db.Text)
+    body_html = db.Column(db.Text)
+    timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow)
+    disabled = db.Column(db.Boolean)
+    author_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    post_id = db.Column(db.Integer, db.ForeignKey('posts.id'))
+    
+    @staticmethod
+    def on_changed_body(target, value, oldvalue, initiator):
+        allowed_tags = ['a', 'abbr', 'acronym', 'b', 'code', 'em', 'i',
+                'strong']
+        target.body_html = bleach.linkify(bleach.clean(
+            markdown(value, output_format='html'),
+            tags=allowed_tags, strip=True))
+        
+db.event.listen(Comment.body, 'set', Comment.on_changed_body)
+
 
