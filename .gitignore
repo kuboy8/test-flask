@@ -1,4 +1,7 @@
 *.pyc
 *.tmp
 
+gun.conf
+
 venv
+
